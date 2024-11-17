@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Map with Drawing Tools and Text Labels</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+    #save-button {
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      padding: 10px 15px;
+      background-color: white;
+      border: 1px solid #ccc;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .text-label {
+      font-size: 14px;
+      color: black;
+      background-color: white;
+      padding: 2px 5px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <button id="save-button">Export</button>
+
+  <script>
+    var map = L.map('map', {
+      center: [51.505, -0.09],
+      zoom: 13,
+      maxZoom: 22
+    });
+
+    // Add OpenStreetMap and Google Satellite layers
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(map);
+
+    var googleSatLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+      attribution: '&copy; Google Maps',
+      subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+      maxZoom: 19
+    });
+
+    var baseLayers = {
+      "OpenStreetMap": osmLayer,
+      "Google Satellite": googleSatLayer
+    };
+    L.control.layers(baseLayers).addTo(map);
+
+    // Drawing tools
+    var drawnItems = new L.FeatureGroup();
+    map.addLayer(drawnItems);
+
+    var drawControl = new L.Control.Draw({
+      edit: {
+        featureGroup: drawnItems
+      },
+      draw: {
+        polyline: { shapeOptions: { color: '#FF0000', weight: 3 }},
+        polygon: true,
+        rectangle: true,
+        circle: true
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on('draw:created', function (event) {
+      var layer = event.layer;
+      layer.feature = layer.feature || { type: "Feature" };
+      layer.feature.properties = layer.feature.properties || {};
+
+      // Prompt user to add a label or number to each drawing
+      var labelText = prompt("Enter label or number for this drawing (optional):");
+      if (labelText) {
+        layer.feature.properties.label = labelText;
+      }
+      
+      drawnItems.addLayer(layer);
+      if (layer instanceof L.Polyline) {
+        alert('Line drawn successfully!');
+      }
+    });
+
+    // User location marker
+    const locationMarker = L.marker([0, 0]).addTo(map).bindPopup("Your Location");
+
+    if (navigator.geolocation) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const userLocation = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          };
+          locationMarker.setLatLng(userLocation);
+          map.setView(userLocation, map.getZoom());
+        },
+        () => {
+          alert("Geolocation failed or is not available.");
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 10000,
+          timeout: 5000
+        }
+      );
+    } else {
+      alert("Geolocation is not supported by this browser.");
+    }
+
+    // Array to store text labels separately
+    var textLabels = [];
+
+    // Add text labels by clicking on the map
+    map.on('click', function(e) {
+      var userText = prompt("Enter text for this location:");
+      if (userText) {
+        var textIcon = L.divIcon({
+          className: 'text-label',
+          html: userText
+        });
+        L.marker(e.latlng, { icon: textIcon }).addTo(map);
+
+        // Store text label data as a GeoJSON feature
+        textLabels.push({
+          type: "Feature",
+          properties: { label: userText },
+          geometry: {
+            type: "Point",
+            coordinates: [e.latlng.lng, e.latlng.lat]
+          }
+        });
+      }
+    });
+
+    // Save button functionality to download drawings as GeoJSON
+    document.getElementById('save-button').addEventListener('click', function() {
+      // Combine drawn shapes and text labels into a single GeoJSON object
+      var geojsonData = drawnItems.toGeoJSON();
+      geojsonData.features = geojsonData.features.concat(textLabels);
+
+      var blob = new Blob([JSON.stringify(geojsonData, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = 'drawing.geojson';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
